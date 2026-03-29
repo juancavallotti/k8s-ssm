@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  chatbot:
+    build:
+      context: services/chatbot
+      dockerfile: Dockerfile
+    image: chatbot:local
+    container_name: chatbot
+    ports:
+      - "3000:8000"
+    environment:
+      - LLM_SERVICE_URL=http://llm:8000
+    networks:
+      - k8s-ssm-net
+    restart: unless-stopped
+
+  llm:
+    build:
+      context: services/llm
+      dockerfile: Dockerfile
+      args:
+        # HF_TOKEN is required at build time for the LLaMA tokenizer download.
+        # Ensure HF_TOKEN is set in your shell or .env before running docker compose build.
+        HF_TOKEN: ${HF_TOKEN}
+        # Set ENV=dev to bake in the lighter 1B model for local smoke-testing (no GPU needed).
+        # Leave unset (or set to anything else) to use the production 8B model.
+        ENV: ${ENV:-}
+    image: llm-service:local
+    container_name: llm
+    profiles:
+      - llm
+    ports:
+      - "8001:8000"
+    environment:
+      # No HF_TOKEN needed at runtime — model is baked into the image at build time.
+      # Pass ENV=dev here if you built the dev image so main.py loads the correct model.
+      - ENV=${ENV:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - k8s-ssm-net
+    restart: unless-stopped
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+
+networks:
+  k8s-ssm-net:
+    driver: bridge
+
+volumes:
+  hf-cache:
