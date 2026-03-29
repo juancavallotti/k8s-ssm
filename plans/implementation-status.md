@@ -11,7 +11,7 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 3 | Chatbot Backend (FastAPI) | `done` | |
 | 4 | Chatbot Frontend (React) | `done` | |
 | 5 | Kubernetes Manifests | `done` | |
-| 6 | Terraform Infrastructure | `pending` | Requires AWS credentials |
+| 6 | Terraform Infrastructure | `done` | Requires AWS credentials |
 | 7 | Local Dev Setup & README | `pending` | |
 
 **Status values**: `pending` · `in-progress` · `done` · `blocked`
@@ -29,3 +29,4 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-29 | 3 | Chatbot backend: requirements.txt, main.py, .env.example |
 | 2026-03-29 | 4 | Chatbot frontend: React SPA + multi-stage Dockerfile |
 | 2026-03-29 | 5 | Kubernetes manifests: namespace, configmap, deployments, services, ingress, nvidia plugin, kustomization |
+| 2026-03-29 | 6 | Terraform: VPC, EKS (app+gpu node groups), IRSA, ALB controller Helm release, Elastic IPs |
