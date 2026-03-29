@@ -10,7 +10,15 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121 \
+# On linux/amd64 (production) install CUDA-enabled torch from the PyTorch wheel index.
+# On linux/arm64 (Apple Silicon local dev) fall back to the PyPI CPU build — CUDA is
+# unavailable on ARM and the cu121 index only carries torch 2.0.x for that platform.
+ARG TARGETPLATFORM
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+      pip install --no-cache-dir torch==2.5.1; \
+    else \
+      pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121; \
+    fi \
     && pip install --no-cache-dir -r requirements.txt
 
 # HF_TOKEN is required at BUILD TIME because the LLaMA tokenizer files are
