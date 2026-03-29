@@ -9,7 +9,7 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 1 | Monorepo Scaffold | `done` | |
 | 2 | LLM Service | `done` | Requires `HF_TOKEN` at build time; `ENV=dev` → 1B model |
 | 3 | Chatbot Backend (FastAPI) | `done` | |
-| 4 | Chatbot Frontend (React) | `pending` | |
+| 4 | Chatbot Frontend (React) | `done` | |
 | 5 | Kubernetes Manifests | `pending` | |
 | 6 | Terraform Infrastructure | `pending` | Requires AWS credentials |
 | 7 | Local Dev Setup & README | `pending` | |
@@ -27,3 +27,4 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-29 | 1 | Monorepo scaffold: directories, .gitignore, README created |
 | 2026-03-29 | 2 | LLM service: requirements.txt, main.py, Dockerfile; ENV=dev uses Llamba-1B |
 | 2026-03-29 | 3 | Chatbot backend: requirements.txt, main.py, .env.example |
+| 2026-03-29 | 4 | Chatbot frontend: React SPA + multi-stage Dockerfile |
