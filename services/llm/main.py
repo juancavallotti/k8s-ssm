@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Literal
 
 ENV = os.getenv("ENV", "")
 
@@ -67,8 +68,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="LLM Service", lifespan=lifespan)
 
 
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class GenerateRequest(BaseModel):
-    prompt: str
+    messages: list[Message]
+    system: str = "You are a helpful assistant."
     max_tokens: int = 512
 
 
@@ -76,20 +83,20 @@ class GenerateResponse(BaseModel):
     response: str
 
 
-def _apply_chat_template(prompt: str) -> str:
-    """Wrap a user message in the Llama 3 instruct chat template."""
-    return (
+def _apply_chat_template(messages: list[Message], system: str) -> str:
+    """Format a conversation into the Llama 3 instruct chat template."""
+    result = (
         "<|begin_of_text|>"
-        "<|start_header_id|>system<|end_header_id|>\n\n"
-        "You are a helpful assistant.<|eot_id|>"
-        "<|start_header_id|>user<|end_header_id|>\n\n"
-        f"{prompt}<|eot_id|>"
-        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        f"<|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|>"
     )
+    for msg in messages:
+        result += f"<|start_header_id|>{msg.role}<|end_header_id|>\n\n{msg.content}<|eot_id|>"
+    result += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    return result
 
 
-def _run_inference(prompt: str, max_tokens: int) -> str:
-    formatted = _apply_chat_template(prompt)
+def _run_inference(messages: list[Message], system: str, max_tokens: int) -> str:
+    formatted = _apply_chat_template(messages, system)
 
     if BACKEND == "mlx":
         chunks: list[str] = []
@@ -102,7 +109,7 @@ def _run_inference(prompt: str, max_tokens: int) -> str:
     import torch
     from functools import partial
 
-    inputs = tokenizer(formatted, return_tensors="pt")
+    inputs = tokenizer(formatted, return_tensors="pt")  # type: ignore[misc]
     input_ids = inputs.input_ids.to(device)
     max_length = input_ids.shape[1] + max_tokens
 
@@ -146,7 +153,7 @@ async def generate(request: GenerateRequest):
     try:
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(
-            executor, _run_inference, request.prompt, request.max_tokens
+            executor, _run_inference, request.messages, request.system, request.max_tokens
         )
         return GenerateResponse(response=text)
     except Exception as e:

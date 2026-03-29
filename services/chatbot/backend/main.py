@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -13,8 +14,14 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="Chatbot Backend")
 
 
+class Message(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatRequest(BaseModel):
-    message: str
+    messages: list[Message]
+    system: str = "You are a useful agent."
     max_tokens: int = 512
 
 
@@ -25,7 +32,11 @@ class ChatResponse(BaseModel):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     url = f"{LLM_SERVICE_URL}/api/generate"
-    payload = {"prompt": request.message, "max_tokens": request.max_tokens}
+    payload = {
+        "messages": [m.model_dump() for m in request.messages],
+        "system": request.system,
+        "max_tokens": request.max_tokens,
+    }
     async with httpx.AsyncClient(timeout=120.0) as client:
         try:
             resp = await client.post(url, json=payload)
