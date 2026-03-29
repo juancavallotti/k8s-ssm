@@ -1,0 +1,14 @@
+# GPU override — merge with docker-compose.yml on Linux machines with an NVIDIA GPU
+# and the NVIDIA Container Toolkit installed.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile llm up --build
+services:
+  llm:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

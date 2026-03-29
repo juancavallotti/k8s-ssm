@@ -36,13 +36,6 @@ services:
       # No HF_TOKEN needed at runtime — model is baked into the image at build time.
       # Pass ENV=dev here if you built the dev image so main.py loads the correct model.
       - ENV=${ENV:-}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s

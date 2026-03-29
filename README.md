@@ -137,11 +137,13 @@ curl http://localhost:3000/health       # chatbot backend
 
 Requires an x86_64 Linux machine with an NVIDIA GPU and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed.
 
+The `docker-compose.gpu.yml` override adds the NVIDIA device reservation. Merge it with the base file using `-f`:
+
 ```bash
 cp .env.example .env
 # Edit .env: set HF_TOKEN, leave ENV unset (or remove the ENV= line)
 
-docker compose --profile llm up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile llm up --build
 # cartesia-pytorch compiles CUDA extensions during the build — expect 20–40 min on first run.
 # The LLM container will log "[startup] Model loaded." ~5 minutes after the container starts.
 

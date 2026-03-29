@@ -7,6 +7,7 @@ All notable changes to this project will be documented here.
 ### Changed
 - Frontend migrated from Create React App (`react-scripts`) to Vite + TypeScript; added Tailwind CSS v4, Lucide React icons, and `react-markdown` with GFM; chat UI rebuilt with Tailwind utility classes and markdown rendering for assistant responses
 - Chatbot Dockerfile updated: Node 18 → Node 20, build output path `build/` → `dist/`, dropped `--legacy-peer-deps`
+- LLM Dockerfile: install `cartesia-pytorch` from GitHub source instead of PyPI (`0.0.2` sdist is missing `version.py`)
 
 ### Added
 - Monorepo scaffold: initial directory structure, .gitignore, and README (Stage 1)
