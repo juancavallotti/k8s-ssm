@@ -1,6 +1,6 @@
 # k8s-ssm
 
-A production-ready, GPU-accelerated chatbot system deployed on AWS EKS. The backend runs `cartesia-ai/Llamba-8B` via HuggingFace Transformers; the frontend is a React SPA served by a FastAPI proxy. Everything is containerised, orchestrated with Kubernetes, and provisioned with Terraform.
+A production-ready, GPU-accelerated chatbot system deployed on AWS EKS. The backend runs `cartesia-ai/Llamba-8B` via the [cartesia-pytorch](https://github.com/cartesia-ai/edge/tree/main/cartesia-pytorch) library (a Mamba-2 SSM, not a Transformer); the frontend is a React SPA served by a FastAPI proxy. Everything is containerised, orchestrated with Kubernetes, and provisioned with Terraform.
 
 ---
 
@@ -28,7 +28,7 @@ Internet                  │                                          │
 | `POST /chat` | chatbot | Proxies to LLM service |
 | `GET /health` | chatbot | Liveness / readiness |
 | `POST /api/generate` | llm-service | Raw LLM inference |
-| `GET /api/health` | llm-service | Returns model name + device |
+| `GET /api/health` | llm-service | Returns model name, tokenizer name, and device |
 
 ---
 
@@ -47,9 +47,9 @@ k8s-ssm/
 │   │   │   └── public/
 │   │   └── Dockerfile        Multi-stage: Node build → Python serve
 │   └── llm/
-│       ├── main.py           FastAPI + HuggingFace Transformers
+│       ├── main.py           FastAPI + cartesia-pytorch (LlambaLMHeadModel)
 │       ├── requirements.txt
-│       └── Dockerfile        CUDA 12.1 base; model baked in at build time
+│       └── Dockerfile        CUDA 12.1 devel base; compiles cartesia-pytorch from source
 ├── k8s/                      Kubernetes manifests (Kustomize)
 ├── infra/                    Terraform — VPC, EKS, ALB controller
 ├── plans/                    Implementation plans and status tracking
@@ -83,21 +83,30 @@ k8s-ssm/
 
 ### HuggingFace access
 
-The LLM model is gated. Before building any image:
+Three gated repositories must be accessible with your token before building any image:
+
+| Repository | Purpose |
+|---|---|
+| [`cartesia-ai/Llamba-8B`](https://huggingface.co/cartesia-ai/Llamba-8B) | Production model weights |
+| [`cartesia-ai/Llamba-1B`](https://huggingface.co/cartesia-ai/Llamba-1B) | Dev / smoke-test model weights |
+| [`meta-llama/Llama-3.1-8B`](https://huggingface.co/meta-llama/Llama-3.1-8B) | Tokenizer for Llamba-8B |
+| [`meta-llama/Llama-3.2-1B`](https://huggingface.co/meta-llama/Llama-3.2-1B) | Tokenizer for Llamba-1B |
 
 1. Create an account at [huggingface.co](https://huggingface.co)
-2. Request access to [`cartesia-ai/Llamba-8B`](https://huggingface.co/cartesia-ai/Llamba-8B)
+2. Request access to each of the four repositories above (the Meta LLaMA repos require accepting Meta's license)
 3. Generate a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
-> **Important**: `HF_TOKEN` is only needed at **image build time**. The tokenizer and model weights are baked into the Docker image during the build step. Running containers do not require the token.
+> **Important**: `HF_TOKEN` is only needed at **image build time**. The model weights and tokenizer files are baked into the Docker image during build. Running containers do not require the token.
 
 ---
 
 ## Local Development
 
-### Option A — Dev mode (no GPU required, 1B model)
+### Option A — Dev mode (1B model, CPU inference)
 
-This is the fastest way to get a working end-to-end stack on any machine. The `ENV=dev` flag swaps the 8B model for the much smaller 1B variant.
+The `ENV=dev` flag loads `Llamba-1B` with its lighter tokenizer (`meta-llama/Llama-3.2-1B`). Inference runs on CPU when no CUDA GPU is present, which is slower but functional for smoke-testing.
+
+> **Apple Silicon (M1/M2/M3)**: `cartesia-pytorch` compiles CUDA C++ extensions and does not support `linux/arm64`. You must pass `--platform linux/amd64` so Docker builds an x86_64 image under emulation. The build will take longer (~30–60 min) but the resulting container runs on CPU.
 
 ```bash
 # 1. Clone and set up env
@@ -109,8 +118,10 @@ cp .env.example .env
 #    HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
 #    ENV=dev
 
-# 3. Build and start the full stack
+# 3. Build and start (add --platform linux/amd64 on Apple Silicon)
 docker compose --profile llm up --build
+# Apple Silicon:
+# DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose --profile llm up --build
 
 # 4. Open the chat UI
 open http://localhost:3000
@@ -118,20 +129,21 @@ open http://localhost:3000
 
 Health checks:
 ```bash
-curl http://localhost:8001/api/health   # LLM service — shows model name and device
-curl http://localhost:3000/health       # Chatbot backend
+curl http://localhost:8001/api/health   # shows model name, tokenizer, and device
+curl http://localhost:3000/health       # chatbot backend
 ```
 
 ### Option B — Full GPU stack (production model locally)
 
-Requires an NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed.
+Requires an x86_64 Linux machine with an NVIDIA GPU and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed.
 
 ```bash
 cp .env.example .env
 # Edit .env: set HF_TOKEN, leave ENV unset (or remove the ENV= line)
 
 docker compose --profile llm up --build
-# The LLM container will log "[startup] Model loaded." after ~5 minutes on first run.
+# cartesia-pytorch compiles CUDA extensions during the build — expect 20–40 min on first run.
+# The LLM container will log "[startup] Model loaded." ~5 minutes after the container starts.
 
 open http://localhost:3000
 ```
@@ -236,15 +248,17 @@ docker build -t chatbot:latest services/chatbot/
 docker tag  chatbot:latest $ECR/chatbot:latest
 docker push $ECR/chatbot:latest
 
-# LLM image (HF_TOKEN required at build time)
+# LLM image — must be built for linux/amd64 (CUDA, required by cartesia-pytorch)
+# HF_TOKEN is needed to download Llamba-8B and the meta-llama/Llama-3.1-8B tokenizer.
 source .env    # loads HF_TOKEN into shell
-docker build --build-arg HF_TOKEN=$HF_TOKEN \
+docker build --platform linux/amd64 \
+             --build-arg HF_TOKEN=$HF_TOKEN \
              -t llm-service:latest services/llm/
 docker tag  llm-service:latest $ECR/llm-service:latest
 docker push $ECR/llm-service:latest
 ```
 
-> **Note**: The LLM image will be large (~20 GB) because the model weights are baked in. The initial push will take several minutes depending on your connection.
+> **Note**: The LLM image is large (~25 GB) — the `devel` CUDA base image, compiled cartesia-pytorch extensions, and baked-in model weights all contribute. The initial build takes 20–40 min and the push several more minutes.
 
 ### Step 6 — Update Kubernetes manifests with ECR image URIs
 
@@ -347,8 +361,11 @@ kubectl get daemonset nvidia-device-plugin-daemonset -n kube-system
 **LLM pod in `CrashLoopBackOff` on startup**
 ```bash
 kubectl logs -l app=llm-service -n chatbot --previous
-# A tokenizer download error means HF_TOKEN was missing at build time.
-# Rebuild the image with --build-arg HF_TOKEN=<token> and push again.
+# "cannot import cartesia_pytorch" → the image was built without cartesia-pytorch.
+#   Rebuild with --platform linux/amd64 and push again.
+# Tokenizer/model download error → HF_TOKEN was missing or lacked access to one of:
+#   cartesia-ai/Llamba-8B, meta-llama/Llama-3.1-8B
+#   Rebuild with --build-arg HF_TOKEN=<token> after granting HuggingFace access.
 ```
 
 **Chat returns `502 Bad Gateway`**
@@ -375,6 +392,8 @@ aws sts get-caller-identity
 
 ## Notes
 
+- **cartesia-pytorch on ARM**: The library compiles CUDA C++ extensions (mamba-ssm, flash-attn, causal-conv1d) and does not support `linux/arm64`. Always build the LLM image with `--platform linux/amd64`. On Apple Silicon this uses QEMU emulation and is significantly slower.
+- **LLM image size**: The `devel` CUDA base image (~5 GB), compiled extensions, and baked-in model weights (~15 GB for 8B) produce an image of ~25 GB. Use ECR lifecycle policies to limit stored versions.
 - **Terraform state** is local by default. For team use, add an S3 backend + DynamoDB lock table to `infra/versions.tf`.
 - **`package-lock.json`**: The chatbot Dockerfile runs `npm install --legacy-peer-deps`. After the first successful install, commit the generated `package-lock.json` and switch the Dockerfile line to `npm ci --legacy-peer-deps` for reproducible builds.
 - **Static IPs**: AWS ALB does not support Elastic IPs directly. The `aws_eip` resources in Terraform are pre-allocated for a potential NLB in front of the ALB. For a truly static public IP, use [AWS Global Accelerator](https://aws.amazon.com/global-accelerator/).

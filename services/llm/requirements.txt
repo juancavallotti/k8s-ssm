@@ -1,5 +1,4 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
-transformers==4.47.1
-accelerate==1.2.1
-huggingface-hub==0.27.0
+# torch and cartesia-pytorch are installed explicitly in the Dockerfile
+# so the correct index URL and build flags can be applied per platform.
