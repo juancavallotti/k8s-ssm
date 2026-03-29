@@ -20,6 +20,9 @@
     "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
   },
   "overrides": {
-    "ajv": "^8.0.0"
+    "ajv": "^8.0.0",
+    "fork-ts-checker-webpack-plugin": {
+      "ajv": "^6.12.6"
+    }
   }
 }
