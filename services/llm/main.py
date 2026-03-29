@@ -30,7 +30,10 @@ else:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global model, tokenizer, device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        device = "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
     print(f"[startup] ENV={ENV!r} — loading {MODEL_NAME} on {device} dtype={dtype}")
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
