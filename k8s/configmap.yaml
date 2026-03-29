@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatbot-config
+  namespace: chatbot
+data:
+  LLM_SERVICE_URL: "http://llm-service:8000"

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-service
+  namespace: chatbot
+  labels:
+    app: llm-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llm-service
+  template:
+    metadata:
+      labels:
+        app: llm-service
+    spec:
+      nodeSelector:
+        role: gpu-nodes
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: llm-service
+          image: <YOUR_ECR_REPO>/llm:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          # No HF_TOKEN env var needed at runtime — model is baked into the image at build time.
+          # The hf-token-secret is only needed during the image build (CI/CD pipeline),
+          # not injected into the running pod.
+          resources:
+            requests:
+              memory: "16Gi"
+              cpu: "2"
+              nvidia.com/gpu: "1"
+            limits:
+              memory: "24Gi"
+              cpu: "4"
+              nvidia.com/gpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 300
+            periodSeconds: 10
+            failureThreshold: 10
