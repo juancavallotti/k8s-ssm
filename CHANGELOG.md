@@ -4,6 +4,10 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+### Changed
+- Frontend migrated from Create React App (`react-scripts`) to Vite + TypeScript; added Tailwind CSS v4, Lucide React icons, and `react-markdown` with GFM; chat UI rebuilt with Tailwind utility classes and markdown rendering for assistant responses
+- Chatbot Dockerfile updated: Node 18 → Node 20, build output path `build/` → `dist/`, dropped `--legacy-peer-deps`
+
 ### Added
 - Monorepo scaffold: initial directory structure, .gitignore, and README (Stage 1)
 - LLM service — FastAPI + `cartesia-ai/Llamba-8B`; `ENV=dev` loads `Llamba-1B` for CPU smoke-testing (Stage 2)

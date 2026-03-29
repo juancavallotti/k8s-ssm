@@ -174,7 +174,7 @@ LLM_SERVICE_URL=http://localhost:8001 uvicorn main:app --reload --port 8000
 # Terminal 3 — React dev server (proxies /chat → localhost:8000 via package.json proxy)
 cd services/chatbot/frontend
 npm install
-npm start
+npm run dev
 # Opens http://localhost:3000 with hot reload
 ```
 
@@ -395,6 +395,6 @@ aws sts get-caller-identity
 - **cartesia-pytorch on ARM**: The library compiles CUDA C++ extensions (mamba-ssm, flash-attn, causal-conv1d) and does not support `linux/arm64`. Always build the LLM image with `--platform linux/amd64`. On Apple Silicon this uses QEMU emulation and is significantly slower.
 - **LLM image size**: The `devel` CUDA base image (~5 GB), compiled extensions, and baked-in model weights (~15 GB for 8B) produce an image of ~25 GB. Use ECR lifecycle policies to limit stored versions.
 - **Terraform state** is local by default. For team use, add an S3 backend + DynamoDB lock table to `infra/versions.tf`.
-- **`package-lock.json`**: The chatbot Dockerfile runs `npm install --legacy-peer-deps`. After the first successful install, commit the generated `package-lock.json` and switch the Dockerfile line to `npm ci --legacy-peer-deps` for reproducible builds.
+- **`package-lock.json`**: The chatbot Dockerfile runs `npm install`. After the first successful build, commit the generated `package-lock.json` and switch the Dockerfile line to `npm ci` for fully reproducible builds.
 - **Static IPs**: AWS ALB does not support Elastic IPs directly. The `aws_eip` resources in Terraform are pre-allocated for a potential NLB in front of the ALB. For a truly static public IP, use [AWS Global Accelerator](https://aws.amazon.com/global-accelerator/).
 - **GPU taint**: GPU nodes carry the taint `nvidia.com/gpu=true:NoSchedule`. Only the LLM deployment has the matching toleration — no other workloads will be scheduled there accidentally.
