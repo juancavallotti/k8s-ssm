@@ -10,7 +10,7 @@ services:
     ports:
       - "3000:8000"
     environment:
-      - LLM_SERVICE_URL=http://llm:8000
+      - LLM_SERVICE_URL=${LLM_SERVICE_URL:-http://llm:8000}
     networks:
       - k8s-ssm-net
     restart: unless-stopped

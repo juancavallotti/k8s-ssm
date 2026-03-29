@@ -33,3 +33,4 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-29 | 7 | Local dev setup: docker-compose.yml, .env.example, full README with local + AWS instructions |
 | 2026-03-29 | 4 | Frontend: migrated CRA → Vite + TypeScript + Tailwind v4 + Lucide + react-markdown |
 | 2026-03-29 | 2 | LLM Dockerfile: cartesia-pytorch installed from git source (PyPI 0.0.2 broken) |
+| 2026-03-29 | 7 | Native dev workflow: concurrently-based npm run dev; MLX backend for Apple Silicon; run-llm-dev.sh + run-chatbot-dev.sh |

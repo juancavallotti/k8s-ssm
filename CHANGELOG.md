@@ -4,10 +4,17 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+### Added
+- Native local dev workflow: `Procfile` + `honcho` (`pip install honcho`, then `honcho start`); starts LLM service, chatbot backend, and frontend in one command
+- `scripts/run-llm-dev.sh`: auto-detects Apple Silicon (MLX via `cartesia-mlx`) vs Intel (CPU pytorch); handles venv setup
+- `scripts/run-chatbot-dev.sh`: venv setup and hot-reload for chatbot FastAPI backend
+- LLM `main.py` now supports two backends: MLX (Apple Silicon, auto-detected) and PyTorch (CUDA/CPU fallback); MLX uses `cartesia-ai/Llamba-*-4bit-mlx` model variants
+
 ### Changed
 - Frontend migrated from Create React App (`react-scripts`) to Vite + TypeScript; added Tailwind CSS v4, Lucide React icons, and `react-markdown` with GFM; chat UI rebuilt with Tailwind utility classes and markdown rendering for assistant responses
 - Chatbot Dockerfile updated: Node 18 → Node 20, build output path `build/` → `dist/`, dropped `--legacy-peer-deps`
 - LLM Dockerfile: install `cartesia-pytorch` from GitHub source instead of PyPI (`0.0.2` sdist is missing `version.py`)
+- `docker-compose.yml`: `LLM_SERVICE_URL` is now configurable via env var (default `http://llm:8000`)
 
 ### Added
 - Monorepo scaffold: initial directory structure, .gitignore, and README (Stage 1)
