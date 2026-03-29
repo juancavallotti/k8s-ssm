@@ -81,6 +81,14 @@ infra/*.tfvars
 
 **Prerequisites**: Stage 1 complete. `services/llm/` directory exists.
 
+**Model selection via `ENV` env var**:
+| `ENV` value | Model loaded | Purpose |
+|---|---|---|
+| `dev` | `cartesia-ai/Llamba-1B` | Local smoke-testing — runs on CPU, no GPU required |
+| anything else | `cartesia-ai/Llamba-8B` | Production |
+
+Set `ENV=dev` in your shell (or `docker run -e ENV=dev`) for fast local iteration without a GPU. The same `ARG ENV` / `--build-arg ENV=dev` pair controls which model is baked into the Docker image at build time.
+
 **API contract** (referenced by Stage 3):
 - `POST /api/generate` — body: `{"prompt": "...", "max_tokens": 512}` → response: `{"response": "..."}`
 - `GET /api/health` → `{"status": "ok", "model": "...", "device": "cuda|cpu", "cuda_available": bool}`
@@ -230,8 +238,14 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ### Verification
 ```bash
+# Production (8B model, GPU)
 docker build --build-arg HF_TOKEN=<your_token> -t llm-service:local .
 docker run --rm -p 8001:8000 llm-service:local
+
+# Local dev smoke test (1B model, CPU-friendly)
+docker build --build-arg HF_TOKEN=<your_token> --build-arg ENV=dev -t llm-service:dev .
+docker run --rm -e ENV=dev -p 8001:8000 llm-service:dev
+
 curl http://localhost:8001/api/health
 curl -X POST http://localhost:8001/api/generate \
   -H 'Content-Type: application/json' \

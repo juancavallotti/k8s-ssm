@@ -7,7 +7,7 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | Stage | Title | Status | Notes |
 |---|---|---|---|
 | 1 | Monorepo Scaffold | `done` | |
-| 2 | LLM Service | `pending` | Requires `HF_TOKEN` at build time |
+| 2 | LLM Service | `done` | Requires `HF_TOKEN` at build time; `ENV=dev` → 1B model |
 | 3 | Chatbot Backend (FastAPI) | `pending` | |
 | 4 | Chatbot Frontend (React) | `pending` | |
 | 5 | Kubernetes Manifests | `pending` | |
@@ -25,3 +25,4 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-29 | — | Plan written and reviewed |
 | 2026-03-29 | — | Dockerfile updated: `HF_TOKEN` required at build time (LLaMA tokenizer gating) |
 | 2026-03-29 | 1 | Monorepo scaffold: directories, .gitignore, README created |
+| 2026-03-29 | 2 | LLM service: requirements.txt, main.py, Dockerfile; ENV=dev uses Llamba-1B |
