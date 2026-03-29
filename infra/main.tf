@@ -52,7 +52,9 @@ module "eks" {
   eks_managed_node_groups = {
     app-nodes = {
       instance_types = ["t3.medium"]
-      min_size = 1; max_size = 4; desired_size = 2
+      min_size     = 1
+      max_size     = 4
+      desired_size = 2
       disk_size = 50
       labels = { role = "app-nodes" }
       tags = merge(local.common_tags, {
@@ -62,7 +64,9 @@ module "eks" {
     }
     gpu-nodes = {
       instance_types = ["g4dn.xlarge"]
-      min_size = 0; max_size = 2; desired_size = 1
+      min_size     = 0
+      max_size     = 2
+      desired_size = 1
       disk_size = 100
       ami_type  = "AL2_x86_64_GPU"
       labels = { role = "gpu-nodes" }
