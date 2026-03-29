@@ -58,6 +58,26 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
+# Node / React
+node_modules/
+services/chatbot/frontend/build/
+services/chatbot/frontend/.env.local
+
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.tfvars
+!infra/example.tfvars
+
+# Docker
+.docker/
+
+# Environment files
+.env
+*.env
+!*.env.example
 db.sqlite3
 db.sqlite3-journal
 

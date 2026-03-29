@@ -4,8 +4,8 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
-### Planned
-- Monorepo scaffold (Stage 1)
+### Added
+- Monorepo scaffold: initial directory structure, .gitignore, and README (Stage 1)
 - LLM service — FastAPI + `cartesia-ai/Llamba-8B` (Stage 2)
 - Chatbot backend — FastAPI proxy (Stage 3)
 - Chatbot frontend — React SPA (Stage 4)
