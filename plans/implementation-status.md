@@ -34,3 +34,7 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-29 | 4 | Frontend: migrated CRA → Vite + TypeScript + Tailwind v4 + Lucide + react-markdown |
 | 2026-03-29 | 2 | LLM Dockerfile: cartesia-pytorch installed from git source (PyPI 0.0.2 broken) |
 | 2026-03-29 | 7 | Native dev workflow: concurrently-based npm run dev; MLX backend for Apple Silicon; run-llm-dev.sh + run-chatbot-dev.sh |
+| 2026-03-30 | 6 | Fixed disk_size → block_device_mappings (gp3, 150GB GPU / 50GB app); was silently ignored by EKS module v20+ |
+| 2026-03-30 | 2 | Fixed OOMKill: load model with device_map+torch_dtype to avoid staging weights in CPU RAM |
+| 2026-03-30 | — | Added Makefile: sequences terraform two-step apply, ECR repo creation, HF token secret, EKS access entry |
+| 2026-03-30 | 5 | Added deployment yaml.template files with {{ECR_BASE}} placeholder; rendered files gitignored |

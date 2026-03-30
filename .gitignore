@@ -63,11 +63,15 @@ node_modules/
 services/chatbot/frontend/build/
 services/chatbot/frontend/.env.local
 
+# Kubernetes — rendered deployment files (contain account-specific ECR URLs)
+k8s/chatbot-deployment.yaml
+k8s/llm-deployment.yaml
+
 # Terraform
 infra/.terraform/
 infra/.terraform.lock.hcl
 infra/terraform.tfstate
-infra/terraform.tfstate.backup
+infra/terraform.tfstate*.backup
 infra/*.tfvars
 !infra/example.tfvars
 

@@ -59,8 +59,11 @@ async def lifespan(app: FastAPI):
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         print(f"[startup] ENV={ENV!r} BACKEND=pytorch — loading {MODEL_NAME} on {device} dtype={dtype}")
         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-        model = LlambaLMHeadModel.from_pretrained(MODEL_NAME)
-        model.to(device=device, dtype=dtype)
+        model = LlambaLMHeadModel.from_pretrained(
+            MODEL_NAME,
+            device_map=device,
+            torch_dtype=dtype,
+        )
         model.eval()
 
     print("[startup] Model loaded.")

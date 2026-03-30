@@ -5,6 +5,14 @@ All notable changes to this project will be documented here.
 ## [Unreleased]
 
 ### Added
+- `Makefile` at repo root: sequences `infra-base` → `infra-helm` → `build` → `push` → `setup-k8s` → `deploy` to avoid terraform chicken-and-egg; auto-creates ECR repos; validates `HF_TOKEN` before creating k8s secret; handles EKS access entry for current IAM identity
+- `k8s/chatbot-deployment.yaml.template` and `k8s/llm-deployment.yaml.template`: deployment manifests with `{{ECR_BASE}}` placeholder; rendered files are gitignored so account IDs are never committed
+
+### Changed
+- `infra/main.tf`: replaced `disk_size` with `block_device_mappings` (gp3, 50GB app / 150GB GPU) — `disk_size` is silently ignored by EKS module v20+ when using managed launch templates
+- `services/llm/main.py`: load pytorch model with `device_map` and `torch_dtype` to avoid staging 16GB weights in CPU RAM before GPU transfer (OOMKill fix)
+
+### Added
 - Native local dev workflow: `Procfile` + `honcho` (`pip install honcho`, then `honcho start`); starts LLM service, chatbot backend, and frontend in one command
 - `scripts/run-llm-dev.sh`: auto-detects Apple Silicon (MLX via `cartesia-mlx`) vs Intel (CPU pytorch); handles venv setup
 - `scripts/run-chatbot-dev.sh`: venv setup and hot-reload for chatbot FastAPI backend

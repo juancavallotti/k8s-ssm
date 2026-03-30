@@ -80,23 +80,23 @@ k8s-ssm/
 | Terraform | >= 1.9.0 |
 | kubectl | >= 1.29 |
 | Docker | 24+ |
+| make | any |
 
 ### HuggingFace access
 
-Three gated repositories must be accessible with your token before building any image:
+Three gated repositories must be accessible with your token at **runtime** (model weights are downloaded to a PersistentVolume on first pod start, not baked into the image):
 
 | Repository | Purpose |
 |---|---|
 | [`cartesia-ai/Llamba-8B`](https://huggingface.co/cartesia-ai/Llamba-8B) | Production model weights |
 | [`cartesia-ai/Llamba-1B`](https://huggingface.co/cartesia-ai/Llamba-1B) | Dev / smoke-test model weights |
-| [`meta-llama/Llama-3.1-8B`](https://huggingface.co/meta-llama/Llama-3.1-8B) | Tokenizer for Llamba-8B |
-| [`meta-llama/Llama-3.2-1B`](https://huggingface.co/meta-llama/Llama-3.2-1B) | Tokenizer for Llamba-1B |
+| [`meta-llama/Llama-3.2-1B`](https://huggingface.co/meta-llama/Llama-3.2-1B) | Tokenizer (shared by both models) |
 
 1. Create an account at [huggingface.co](https://huggingface.co)
-2. Request access to each of the four repositories above (the Meta LLaMA repos require accepting Meta's license)
+2. Request access to each repository above (the Meta LLaMA repo requires accepting Meta's license)
 3. Generate a read token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
-> **Important**: `HF_TOKEN` is only needed at **image build time**. The model weights and tokenizer files are baked into the Docker image during build. Running containers do not require the token.
+> **Important**: `HF_TOKEN` is stored as a Kubernetes secret and injected at runtime. It is **not** needed at image build time.
 
 ---
 
@@ -186,121 +186,82 @@ npm run dev
 
 ### Step 1 — Configure AWS credentials
 
+Create a dedicated IAM user with `AdministratorAccess` (do not use root):
+
 ```bash
-aws configure
-# Enter: AWS Access Key ID, Secret Access Key, region (us-east-1), output format (json)
+# Create user and attach policy
+aws iam create-user --user-name terraform
+aws iam attach-user-policy \
+  --user-name terraform \
+  --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+aws iam create-access-key --user-name terraform
+# Save the AccessKeyId and SecretAccessKey from the output
+
+# Configure a named profile
+aws configure --profile terraform
+# Enter the access key, secret, region (us-west-2), output format (json)
+
+export AWS_PROFILE=terraform
 
 # Verify
 aws sts get-caller-identity
 ```
 
-### Step 2 — Provision infrastructure with Terraform
+> **GPU quota**: New AWS accounts default to 0 G-instance vCPUs. Request a quota increase for `Running On-Demand G and VT instances` to at least 4 in [Service Quotas](https://console.aws.amazon.com/servicequotas/) before deploying.
 
-This creates the VPC, EKS cluster (app nodes + GPU nodes), IAM roles, and the AWS Load Balancer Controller via Helm.
+### Step 2 — Deploy everything with Make
 
 ```bash
-cd infra
-terraform init
-terraform plan -var-file=example.tfvars    # Review ~50-70 resources
-terraform apply -var-file=example.tfvars   # Takes 15–25 minutes
+export HF_TOKEN=hf_your_token_here
+make all
 ```
 
-Default configuration (`example.tfvars`):
+That's it. `make all` runs these steps in order:
+
+| Step | What it does |
+|---|---|
+| `infra-base` | Provisions VPC, EKS cluster, node groups, IAM roles (skips Helm to avoid chicken-and-egg) |
+| `infra-helm` | Installs AWS Load Balancer Controller via Helm |
+| `build` | Builds `chatbot` and `llm` Docker images for `linux/amd64` |
+| `push` | Creates ECR repos if missing, authenticates, and pushes both images |
+| `setup-k8s` | Creates the `hf-token` Kubernetes secret |
+| `deploy` | Applies all Kubernetes manifests and waits for rollout |
+
+Total time: ~25–35 minutes (cluster provisioning dominates).
+
+Default infrastructure (`infra/terraform.tfvars`):
 
 | Resource | Type | Count |
 |---|---|---|
-| Region | us-east-1 | — |
+| Region | us-west-2 | — |
 | App nodes | t3.medium | 2 (min 1, max 4) |
-| GPU nodes | g4dn.xlarge | 1 (min 0, max 2) |
+| GPU nodes | g5.xlarge (24 GB VRAM) | 1 (min 0, max 2) |
 | VPC | 10.0.0.0/16 | 3 AZs |
 
-### Step 3 — Configure kubectl
-
-```bash
-aws eks update-kubeconfig --region us-east-1 --name k8s-ssm
-
-# Verify
-kubectl get nodes
-# You should see 3 nodes: 2 app-nodes + 1 gpu-node
-```
-
-### Step 4 — Create ECR repositories
-
-```bash
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-REGION=us-east-1
-
-aws ecr create-repository --repository-name chatbot      --region $REGION
-aws ecr create-repository --repository-name llm-service  --region $REGION
-
-# Authenticate Docker to ECR
-aws ecr get-login-password --region $REGION | \
-  docker login --username AWS --password-stdin $ACCOUNT.dkr.ecr.$REGION.amazonaws.com
-```
-
-### Step 5 — Build and push images
-
-```bash
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-REGION=us-east-1
-ECR=$ACCOUNT.dkr.ecr.$REGION.amazonaws.com
-
-# Chatbot image (no token needed)
-docker build -t chatbot:latest services/chatbot/
-docker tag  chatbot:latest $ECR/chatbot:latest
-docker push $ECR/chatbot:latest
-
-# LLM image — must be built for linux/amd64 (CUDA, required by cartesia-pytorch)
-# HF_TOKEN is needed to download Llamba-8B and the meta-llama/Llama-3.1-8B tokenizer.
-source .env    # loads HF_TOKEN into shell
-docker build --platform linux/amd64 \
-             --build-arg HF_TOKEN=$HF_TOKEN \
-             -t llm-service:latest services/llm/
-docker tag  llm-service:latest $ECR/llm-service:latest
-docker push $ECR/llm-service:latest
-```
-
-> **Note**: The LLM image is large (~25 GB) — the `devel` CUDA base image, compiled cartesia-pytorch extensions, and baked-in model weights all contribute. The initial build takes 20–40 min and the push several more minutes.
-
-### Step 6 — Update Kubernetes manifests with ECR image URIs
-
-```bash
-ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-REGION=us-east-1
-ECR=$ACCOUNT.dkr.ecr.$REGION.amazonaws.com
-
-sed -i "s|<YOUR_ECR_REPO>/chatbot:latest|$ECR/chatbot:latest|g"       k8s/chatbot-deployment.yaml
-sed -i "s|<YOUR_ECR_REPO>/llm:latest|$ECR/llm-service:latest|g"       k8s/llm-deployment.yaml
-```
-
-### Step 7 — Deploy to EKS
-
-```bash
-# Apply namespace first (other manifests depend on it)
-kubectl apply -f k8s/namespace.yaml
-
-# Apply everything else
-kubectl apply -f k8s/
-
-# Watch rollout
-kubectl rollout status deployment/chatbot     -n chatbot
-kubectl rollout status deployment/llm-service -n chatbot
-# Note: the LLM pod has a 300s initial delay — it is loading model weights.
-```
-
-### Step 8 — Get the public URL
+### Step 3 — Get the public URL
 
 ```bash
 # Wait ~2–3 minutes for the ALB to provision, then:
 kubectl get ingress -n chatbot
-
-# The ADDRESS column shows the ALB DNS name, e.g.:
-# k8s-chatbot-chatbotin-xxxx.us-east-1.elb.amazonaws.com
+# The ADDRESS column shows the ALB DNS name
 ```
 
-Open that URL in your browser — the chat UI should load immediately.
+Open that URL in your browser — the chat UI loads immediately. The LLM pod downloads model weights (~16 GB) to its PersistentVolume on first start; subsequent restarts are fast since the weights are cached.
 
-> **Custom domain**: Point a `CNAME` record at the ALB DNS name in Route 53 (or your DNS provider) for a cleaner public URL.
+> **First-run note**: The LLM pod will show `0/1 Running` for 2–5 minutes while downloading model weights from HuggingFace. Watch progress with `kubectl logs -n chatbot -l app=llm-service -f`.
+
+> **Custom domain**: Point a `CNAME` record at the ALB DNS name in your DNS provider for a cleaner public URL.
+
+### Individual make targets
+
+```bash
+make infra       # Provision/update AWS infrastructure only
+make build       # Rebuild Docker images
+make push        # Push images to ECR
+make setup-k8s   # Re-create the HF token secret (after token rotation)
+make deploy      # Re-apply k8s manifests
+make teardown    # Destroy everything
+```
 
 ---
 
@@ -320,32 +281,37 @@ Open that URL in your browser — the chat UI should load immediately.
 |---|---|---|
 | EKS Control Plane | Managed | ~$73 |
 | app-nodes × 2 | t3.medium | ~$60 |
-| gpu-node × 1 | g4dn.xlarge | ~$380 |
+| gpu-node × 1 | g5.xlarge | ~$580 |
 | NAT Gateway | Single AZ | ~$32 |
 | ALB | Per hour + LCU | ~$20 |
-| ECR storage | ~25 GB | ~$2.50 |
-| **Total** | | **~$570/month** |
+| ECR storage | ~5 GB (no weights in image) | ~$0.50 |
+| EBS PVC | 60 GB gp3 (model cache) | ~$5 |
+| **Total** | | **~$770/month** |
 
-**Cost-saving tip**: Set `desired_size = 0` on the `gpu-nodes` group in Terraform and re-apply when the GPU node is not needed. This saves ~$380/month during inactive periods.
+**Cost-saving tip**: Set `desired_size = 0` on the `gpu-nodes` group in Terraform and re-apply when the GPU node is not needed. This saves ~$580/month during inactive periods. The PVC retains the cached model weights so the next cold start skips the download.
 
 ---
 
 ## Teardown
 
-> Always delete the Kubernetes namespace **before** running `terraform destroy`. The ALB is managed by the in-cluster Load Balancer Controller; destroying the cluster first may leave the ALB orphaned and still incurring charges.
+> Always delete the Kubernetes workloads **before** running `terraform destroy`. The ALB is managed by the in-cluster Load Balancer Controller; destroying the cluster first may leave the ALB orphaned and still incurring charges.
 
 ```bash
-# 1. Remove Kubernetes workloads (this also releases the ALB)
-kubectl delete namespace chatbot
+make teardown
+```
+
+Or manually:
+```bash
+# 1. Remove Kubernetes workloads (releases the ALB)
+kubectl delete -k k8s/
 
 # 2. Destroy all AWS infrastructure
-cd infra
-terraform destroy -var-file=example.tfvars
+cd infra && terraform destroy -auto-approve
 
-# 3. (Optional) Delete ECR repositories and their images
-REGION=us-east-1
-aws ecr delete-repository --repository-name chatbot     --force --region $REGION
-aws ecr delete-repository --repository-name llm-service --force --region $REGION
+# 3. (Optional) Delete ECR repositories
+REGION=us-west-2
+aws ecr delete-repository --repository-name chatbot --force --region $REGION
+aws ecr delete-repository --repository-name llm     --force --region $REGION
 ```
 
 ---
@@ -360,14 +326,23 @@ kubectl describe pod -l app=llm-service -n chatbot
 kubectl get daemonset nvidia-device-plugin-daemonset -n kube-system
 ```
 
-**LLM pod in `CrashLoopBackOff` on startup**
+**LLM pod in `CrashLoopBackOff` or `CreateContainerConfigError`**
 ```bash
+kubectl describe pod -l app=llm-service -n chatbot | grep -A5 Warning
+# "secret hf-token not found" → run: make setup-k8s (requires HF_TOKEN env var)
 kubectl logs -l app=llm-service -n chatbot --previous
-# "cannot import cartesia_pytorch" → the image was built without cartesia-pytorch.
-#   Rebuild with --platform linux/amd64 and push again.
-# Tokenizer/model download error → HF_TOKEN was missing or lacked access to one of:
-#   cartesia-ai/Llamba-8B, meta-llama/Llama-3.1-8B
-#   Rebuild with --build-arg HF_TOKEN=<token> after granting HuggingFace access.
+# "cannot import cartesia_pytorch" → image was built for wrong arch.
+#   Rebuild with --platform linux/amd64: make build && make push
+# HuggingFace 403/401 → token lacks access to cartesia-ai/Llamba-8B or meta-llama/Llama-3.2-1B
+#   Request access on HuggingFace, then re-run: make setup-k8s
+```
+
+**LLM pod `OOMKilled`**
+```bash
+# The g5.xlarge has 16 GB RAM and 24 GB VRAM.
+# The model (~16 GB in bfloat16) must load directly to GPU — not staged in CPU RAM.
+# Ensure main.py uses device_map=device in LlambaLMHeadModel.from_pretrained().
+kubectl logs -l app=llm-service -n chatbot
 ```
 
 **Chat returns `502 Bad Gateway`**
@@ -395,7 +370,7 @@ aws sts get-caller-identity
 ## Notes
 
 - **cartesia-pytorch on ARM**: The library compiles CUDA C++ extensions (mamba-ssm, flash-attn, causal-conv1d) and does not support `linux/arm64`. Always build the LLM image with `--platform linux/amd64`. On Apple Silicon this uses QEMU emulation and is significantly slower.
-- **LLM image size**: The `devel` CUDA base image (~5 GB), compiled extensions, and baked-in model weights (~15 GB for 8B) produce an image of ~25 GB. Use ECR lifecycle policies to limit stored versions.
+- **LLM image size**: The `devel` CUDA base image (~5 GB) plus compiled extensions produce an image of ~8 GB. Model weights (~16 GB in bfloat16) are **not** baked into the image — they are downloaded at runtime to a 60 GB EBS PersistentVolume (`llm-model-cache`). Subsequent pod restarts skip the download since the volume is retained.
 - **Terraform state** is local by default. For team use, add an S3 backend + DynamoDB lock table to `infra/versions.tf`.
 - **`package-lock.json`**: The chatbot Dockerfile runs `npm install`. After the first successful build, commit the generated `package-lock.json` and switch the Dockerfile line to `npm ci` for fully reproducible builds.
 - **Static IPs**: AWS ALB does not support Elastic IPs directly. The `aws_eip` resources in Terraform are pre-allocated for a potential NLB in front of the ALB. For a truly static public IP, use [AWS Global Accelerator](https://aws.amazon.com/global-accelerator/).

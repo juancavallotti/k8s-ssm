@@ -49,13 +49,29 @@ module "eks" {
   cluster_endpoint_public_access = true
   enable_irsa                    = true
 
+  cluster_addons = {
+    aws-ebs-csi-driver = {
+      most_recent              = true
+      service_account_role_arn = aws_iam_role.ebs_csi_driver.arn
+    }
+  }
+
   eks_managed_node_groups = {
     app-nodes = {
       instance_types = ["t3.medium"]
       min_size     = 1
       max_size     = 4
       desired_size = 2
-      disk_size = 50
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 50
+            volume_type           = "gp3"
+            delete_on_termination = true
+          }
+        }
+      }
       labels = { role = "app-nodes" }
       tags = merge(local.common_tags, {
         "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
@@ -67,8 +83,17 @@ module "eks" {
       min_size     = 0
       max_size     = 2
       desired_size = 1
-      disk_size = 150
       ami_type  = "AL2_x86_64_GPU"
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 150
+            volume_type           = "gp3"
+            delete_on_termination = true
+          }
+        }
+      }
       labels = { role = "gpu-nodes" }
       taints = [{ key = "nvidia.com/gpu", value = "true", effect = "NO_SCHEDULE" }]
       tags = merge(local.common_tags, {
@@ -111,6 +136,34 @@ resource "aws_iam_policy" "alb_controller" {
 resource "aws_iam_role_policy_attachment" "alb_controller" {
   policy_arn = aws_iam_policy.alb_controller.arn
   role       = aws_iam_role.alb_controller.name
+}
+
+# IRSA for EBS CSI driver
+data "aws_iam_policy_document" "ebs_csi_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi_driver" {
+  name               = "${var.cluster_name}-ebs-csi-driver"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume.json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+  role       = aws_iam_role.ebs_csi_driver.name
 }
 
 # Elastic IPs for NLB static IPs (1 per public subnet)
