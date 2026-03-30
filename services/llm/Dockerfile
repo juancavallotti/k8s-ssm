@@ -51,39 +51,9 @@ RUN git clone --depth=1 https://github.com/cartesia-ai/edge.git /tmp/cartesia-ed
 # Install remaining FastAPI / Uvicorn dependencies.
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# HF_TOKEN is required at BUILD TIME to download the gated Llamba model weights
-# and the corresponding LLaMA tokenizer from HuggingFace.
-# Pass it with: docker build --build-arg HF_TOKEN=hf_xxx ...
-ARG HF_TOKEN
-ENV HF_TOKEN=${HF_TOKEN}
-
-# ENV controls which model is baked into the image:
-#   ENV=dev  → cartesia-ai/Llamba-1B  + meta-llama/Llama-3.2-1B tokenizer
-#   ENV=<anything else> → cartesia-ai/Llamba-8B + meta-llama/Llama-3.1-8B tokenizer
-ARG ENV
-ENV ENV=${ENV}
-
-# Pre-download model weights and tokenizer during build so the container
-# starts instantly at runtime without needing network access or the token.
-# snapshot_download fetches files to the HF cache without loading tensors
-# into RAM — safe under QEMU/memory-constrained build environments.
-RUN python3 -c "\
-import os; \
-from transformers import AutoTokenizer; \
-from huggingface_hub import snapshot_download, login; \
-token = os.getenv('HF_TOKEN'); \
-login(token=token); \
-is_dev = os.getenv('ENV') == 'dev'; \
-model_name = 'cartesia-ai/Llamba-1B' if is_dev else 'cartesia-ai/Llamba-8B'; \
-tok_name   = 'meta-llama/Llama-3.2-1B'; \
-print(f'[build] pre-downloading {model_name} + tokenizer {tok_name}'); \
-AutoTokenizer.from_pretrained(tok_name, token=token); \
-snapshot_download(repo_id=model_name, token=token); \
-print('[build] done.') \
-"
-
-# Clear the token from the environment after download (do not leak into runtime)
-ENV HF_TOKEN=""
+# Model weights are NOT baked into the image. They are downloaded at pod startup
+# into /model-cache, which should be backed by a PersistentVolume in Kubernetes.
+# HF_TOKEN and ENV are injected at runtime via environment variables / k8s secrets.
 
 COPY main.py .
 EXPOSE 8000

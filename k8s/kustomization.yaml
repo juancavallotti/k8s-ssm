@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
+  - llm-pvc.yaml
   - llm-deployment.yaml
   - llm-service.yaml
   - chatbot-deployment.yaml

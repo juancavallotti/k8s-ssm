@@ -27,9 +27,19 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
-          # No HF_TOKEN env var needed at runtime — model is baked into the image at build time.
-          # The hf-token-secret is only needed during the image build (CI/CD pipeline),
-          # not injected into the running pod.
+          env:
+            - name: ENV
+              value: "prod"
+            - name: HF_CACHE_DIR
+              value: "/model-cache"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          volumeMounts:
+            - name: model-cache
+              mountPath: /model-cache
           resources:
             requests:
               memory: "16Gi"
@@ -43,13 +53,17 @@ spec:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 300
+            initialDelaySeconds: 120
             periodSeconds: 30
             failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 300
+            initialDelaySeconds: 120
             periodSeconds: 10
             failureThreshold: 10
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: llm-model-cache

@@ -9,6 +9,11 @@ from typing import Literal
 
 ENV = os.getenv("ENV", "")
 
+# Redirect HuggingFace cache to the persistent volume mount.
+# Falls back to the default ~/.cache/huggingface when running locally.
+HF_CACHE_DIR = os.getenv("HF_CACHE_DIR", "/model-cache")
+os.environ["HF_HOME"] = HF_CACHE_DIR
+
 # Detect backend at import time.
 # MLX is available when running natively on Apple Silicon macOS.
 # Fall back to pytorch (CUDA or CPU) in all other environments.
