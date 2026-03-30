@@ -38,3 +38,4 @@ Tracks execution progress of [implementation-plan.md](implementation-plan.md).
 | 2026-03-30 | 2 | Fixed OOMKill: load model with device_map+torch_dtype to avoid staging weights in CPU RAM |
 | 2026-03-30 | — | Added Makefile: sequences terraform two-step apply, ECR repo creation, HF token secret, EKS access entry |
 | 2026-03-30 | 5 | Added deployment yaml.template files with {{ECR_BASE}} placeholder; rendered files gitignored |
+| 2026-03-30 | — | Added GitHub Actions workflows (build-llm.yml, build-chatbot.yml): native linux/amd64 build fixes CUDA segfault from QEMU; auto-deploys on push to main |

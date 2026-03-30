@@ -255,13 +255,50 @@ Open that URL in your browser — the chat UI loads immediately. The LLM pod dow
 ### Individual make targets
 
 ```bash
-make infra       # Provision/update AWS infrastructure only
-make build       # Rebuild Docker images
-make push        # Push images to ECR
-make setup-k8s   # Re-create the HF token secret (after token rotation)
-make deploy      # Re-apply k8s manifests
-make teardown    # Destroy everything
+make infra          # Provision/update AWS infrastructure only
+make build          # Rebuild both Docker images locally (QEMU on Apple Silicon)
+make build-llm      # Rebuild LLM image only
+make build-chatbot  # Rebuild chatbot image only
+make push           # Push both images to ECR
+make push-llm       # Push LLM image only
+make push-chatbot   # Push chatbot image only
+make setup-k8s      # Re-create the HF token secret (after token rotation)
+make deploy         # Re-apply k8s manifests
+make teardown       # Destroy everything
 ```
+
+---
+
+## CI/CD — GitHub Actions
+
+The LLM image **must** be built on a native linux/amd64 host. Building it locally on Apple Silicon under QEMU emulation produces broken CUDA extension binaries that segfault at runtime. The GitHub Actions workflows fix this by running on `ubuntu-latest` (native x86_64).
+
+### Workflows
+
+| File | Trigger | What it does |
+|---|---|---|
+| `.github/workflows/build-llm.yml` | Push to `main` touching `services/llm/**`, or manual | Builds LLM image natively → pushes to ECR → rollout restarts the pod |
+| `.github/workflows/build-chatbot.yml` | Push to `main` touching `services/chatbot/**`, or manual | Builds chatbot image → pushes to ECR → rollout restarts the pod |
+
+Both workflows can also be triggered manually from the GitHub Actions UI ("Run workflow" button) with an optional `deploy` toggle.
+
+### Setup — GitHub repository secrets
+
+Go to **Settings → Secrets and variables → Actions** in your GitHub repo and add:
+
+| Secret name | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | Access key for the IAM user created in Step 1 |
+| `AWS_SECRET_ACCESS_KEY` | Corresponding secret key |
+
+Optionally, add these as **repository variables** (not secrets) to override defaults:
+
+| Variable name | Default | Description |
+|---|---|---|
+| `AWS_REGION` | `us-west-2` | AWS region |
+| `CLUSTER_NAME` | `k8s-ssm` | EKS cluster name |
+
+The IAM user needs `AmazonEC2ContainerRegistryPowerUser` (for ECR push) and `AmazonEKSClusterPolicy` / `AmazonEKSWorkerNodePolicy` (for `kubectl rollout`). Using the same `AdministratorAccess` user from Step 1 is simplest.
 
 ---
 

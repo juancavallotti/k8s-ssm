@@ -5,6 +5,11 @@ All notable changes to this project will be documented here.
 ## [Unreleased]
 
 ### Added
+- `.github/workflows/build-llm.yml`: builds LLM Docker image on native linux/amd64 (no QEMU), pushes to ECR, and rollout-restarts the EKS pod; fixes CUDA extension segfaults caused by QEMU-compiled kernels on Apple Silicon
+- `.github/workflows/build-chatbot.yml`: same pattern for the chatbot image
+- Per-service Makefile targets: `build-llm`, `build-chatbot`, `push-llm`, `push-chatbot`
+
+### Added
 - `Makefile` at repo root: sequences `infra-base` → `infra-helm` → `build` → `push` → `setup-k8s` → `deploy` to avoid terraform chicken-and-egg; auto-creates ECR repos; validates `HF_TOKEN` before creating k8s secret; handles EKS access entry for current IAM identity
 - `k8s/chatbot-deployment.yaml.template` and `k8s/llm-deployment.yaml.template`: deployment manifests with `{{ECR_BASE}}` placeholder; rendered files are gitignored so account IDs are never committed
 

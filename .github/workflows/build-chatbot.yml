@@ -1,0 +1,79 @@
+name: Build & Push chatbot image
+
+# Required GitHub secrets:
+#   AWS_ACCESS_KEY_ID      - IAM key with ECR push + EKS describe permissions
+#   AWS_SECRET_ACCESS_KEY  - corresponding secret key
+#
+# Optional variables:
+#   AWS_REGION    (default: us-west-2)
+#   CLUSTER_NAME  (default: k8s-ssm)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/chatbot/**"
+      - ".github/workflows/build-chatbot.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Rollout restart after push? (true/false)"
+        required: false
+        default: "true"
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+  CLUSTER_NAME: ${{ vars.CLUSTER_NAME || 'k8s-ssm' }}
+
+jobs:
+  build-push:
+    name: Build and push chatbot image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve ECR base URL
+        id: ecr
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "base=${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin ${{ steps.ecr.outputs.base }}
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories \
+            --repository-names chatbot \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || \
+          aws ecr create-repository \
+            --repository-name chatbot \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Build chatbot image
+        run: docker build --platform linux/amd64 -t chatbot services/chatbot/
+
+      - name: Push to ECR
+        run: |
+          docker tag chatbot:latest ${{ steps.ecr.outputs.base }}/chatbot:latest
+          docker push ${{ steps.ecr.outputs.base }}/chatbot:latest
+
+      - name: Rollout restart chatbot deployment
+        if: ${{ github.event_name == 'push' || github.event.inputs.deploy == 'true' }}
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+          kubectl rollout restart deployment/chatbot -n chatbot
+          kubectl rollout status deployment/chatbot -n chatbot --timeout=120s

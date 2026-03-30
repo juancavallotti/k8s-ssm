@@ -3,7 +3,7 @@ CLUSTER_NAME ?= k8s-ssm
 ACCOUNT_ID   := $(shell aws sts get-caller-identity --query Account --output text)
 ECR_BASE     := $(ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 
-.PHONY: all infra deploy build push setup-k8s render-k8s teardown help
+.PHONY: all infra deploy build push build-llm build-chatbot push-llm push-chatbot setup-k8s render-k8s teardown help
 
 ## Full deployment from scratch
 all: infra build push setup-k8s deploy
@@ -57,14 +57,22 @@ ecr-repos:
 	aws ecr describe-repositories --region $(AWS_REGION) --repository-names chatbot 2>/dev/null || \
 		aws ecr create-repository --repository-name chatbot --region $(AWS_REGION)
 
-build:
+build: build-llm build-chatbot
+
+build-llm:
 	docker build --platform linux/amd64 -t llm services/llm/
+
+build-chatbot:
 	docker build --platform linux/amd64 -t chatbot services/chatbot/
 
-push: ecr-login ecr-repos
+push: push-llm push-chatbot
+
+push-llm: ecr-login ecr-repos
 	docker tag llm:latest $(ECR_BASE)/llm:latest
-	docker tag chatbot:latest $(ECR_BASE)/chatbot:latest
 	docker push $(ECR_BASE)/llm:latest
+
+push-chatbot: ecr-login ecr-repos
+	docker tag chatbot:latest $(ECR_BASE)/chatbot:latest
 	docker push $(ECR_BASE)/chatbot:latest
 
 ## ── Kubernetes setup ──────────────────────────────────────────────────────────
@@ -109,8 +117,12 @@ help:
 	@echo "Usage:"
 	@echo "  make all            Full deploy from scratch (infra + build + push + k8s)"
 	@echo "  make infra          Provision AWS infrastructure (two-step, handles chicken-and-egg)"
-	@echo "  make build          Build Docker images (linux/amd64)"
-	@echo "  make push           Push images to ECR (creates repos if needed)"
+	@echo "  make build          Build both Docker images (linux/amd64)"
+	@echo "  make build-llm      Build LLM image only"
+	@echo "  make build-chatbot  Build chatbot image only"
+	@echo "  make push           Push both images to ECR (creates repos if needed)"
+	@echo "  make push-llm       Push LLM image only"
+	@echo "  make push-chatbot   Push chatbot image only"
 	@echo "  make render-k8s     Render deployment YAMLs from templates (fills in ECR URL)"
 	@echo "  make setup-k8s      Create Kubernetes secrets (requires HF_TOKEN env var)"
 	@echo "  make deploy         Render manifests and apply to k8s"
