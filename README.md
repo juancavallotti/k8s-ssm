@@ -1,6 +1,6 @@
 # k8s-ssm
 
-A production-ready, GPU-accelerated chatbot system deployed on AWS EKS. The backend runs `cartesia-ai/Llamba-8B` via the [cartesia-pytorch](https://github.com/cartesia-ai/edge/tree/main/cartesia-pytorch) library (a Mamba-2 SSM, not a Transformer); the frontend is a React SPA served by a FastAPI proxy. Everything is containerised, orchestrated with Kubernetes, and provisioned with Terraform.
+A production-ready, GPU-accelerated chatbot system deployed on AWS EKS. The backend runs `cartesia-ai/Llamba-3B` via the [cartesia-pytorch](https://github.com/cartesia-ai/edge/tree/main/cartesia-pytorch) library (a Mamba-2 SSM, not a Transformer); the frontend is a React SPA served by a FastAPI proxy. Everything is containerised, orchestrated with Kubernetes, and provisioned with Terraform.
 
 ---
 
@@ -16,7 +16,7 @@ Internet                  │                                          │
    │   /api/*     ──────► │   └─────────────────┘         │         │
    │                      │                         ┌──────┴──────┐  │
    └── ALB Ingress ──────►│                         │ llm-service │  │
-                          │                         │ (Llamba-8B) │  │
+                          │                         │ (Llamba-3B) │  │
                           │                         │  GPU node   │  │
                           │                         └─────────────┘  │
                           └─────────────────────────────────────────┘
@@ -29,6 +29,108 @@ Internet                  │                                          │
 | `GET /health` | chatbot | Liveness / readiness |
 | `POST /api/generate` | llm-service | Raw LLM inference |
 | `GET /api/health` | llm-service | Returns model name, tokenizer name, and device |
+
+---
+
+## State Space Models — Why Not a Transformer?
+
+Most LLM deployments use Transformer-based models (GPT, LLaMA, Mistral, etc.). This project instead uses **Llamba**, a hybrid SSM (State Space Model) built on [Mamba-2](https://arxiv.org/abs/2405.21060) — a fundamentally different sequence modelling architecture.
+
+### How Transformers work
+
+Transformers process sequences using **self-attention**: every token attends to every other token in the context window. This is powerful but expensive:
+
+- **Time complexity**: O(n²) in sequence length — doubling the context quadruples the compute
+- **Memory**: the KV cache grows linearly with context length; long conversations consume significant GPU RAM
+- **Parallelism**: attention is computed in one shot over the whole sequence, which suits training but wastes work during inference (you recompute attention for tokens you've already seen)
+
+### How SSMs work
+
+State Space Models represent sequence processing as a **linear dynamical system**:
+
+```
+h(t) = A · h(t-1) + B · x(t)   ← update hidden state
+y(t) = C · h(t)                 ← produce output
+```
+
+Where `h(t)` is a fixed-size hidden state, `x(t)` is the current input token, and `A`, `B`, `C` are learned matrices. During inference this reduces to a simple **recurrence** — processing each new token requires only the current hidden state, not the full history.
+
+**Mamba** (2023) made SSMs competitive with Transformers by making `A`, `B`, `C` input-dependent (selective state space), allowing the model to decide what to remember and what to forget.
+
+**Mamba-2 / Structured State Space Duality (SSD)** (2024) reformulated Mamba as a matrix multiplication that can be computed efficiently in parallel during training (like attention) while still running as a recurrence at inference time.
+
+**Llamba** combines the Llama 3 architecture (RoPE embeddings, RMSNorm, SwiGLU MLP) with Discrete Mamba-2 mixer layers in place of multi-head attention.
+
+### Why this matters for inference
+
+| Property | Transformer | SSM (Mamba-2) |
+|---|---|---|
+| Per-token inference compute | O(n) — scales with context | O(1) — constant regardless of context |
+| KV / state cache size | Grows with context length | Fixed size (hidden state only) |
+| Memory bandwidth | High (read entire KV cache per step) | Low (read/write fixed state) |
+| Long-context capability | Degrades beyond training window | Handles arbitrarily long contexts |
+
+For a chatbot with long conversations, SSMs maintain constant inference speed and memory usage regardless of how much has been said. A Transformer slows down and uses more memory as the conversation grows.
+
+---
+
+## GPU Scheduling in Kubernetes
+
+Running a GPU workload on Kubernetes requires three things to line up: a node with a physical GPU, a Kubernetes plugin that exposes it as a schedulable resource, and pod configuration that requests it correctly.
+
+### Node group and taint
+
+The Terraform configuration provisions a dedicated **GPU node group** (`g5.xlarge`, 1 NVIDIA A10G, 24 GB VRAM) separate from the application node group (`t3.medium`). The GPU node carries a **taint**:
+
+```
+nvidia.com/gpu=true:NoSchedule
+```
+
+A taint is a repellent — any pod that doesn't explicitly tolerate it will never be scheduled on that node. This prevents CPU-only workloads (the chatbot, system pods) from accidentally consuming GPU node resources, which are expensive (~$580/month for a g5.xlarge).
+
+### NVIDIA device plugin
+
+Raw Kubernetes has no concept of GPUs. The [NVIDIA device plugin](https://github.com/NVIDIA/k8s-device-plugin) is a DaemonSet that runs on every GPU node, discovers the physical GPUs via the NVIDIA Container Toolkit, and registers them with the Kubelet as an extended resource: `nvidia.com/gpu`.
+
+Once registered, pods can request GPUs the same way they request CPU and memory:
+
+```yaml
+resources:
+  requests:
+    nvidia.com/gpu: "1"
+  limits:
+    nvidia.com/gpu: "1"
+```
+
+Kubernetes enforces GPU requests as exclusive allocations — two pods cannot share a single GPU (unless MIG partitioning is configured, which it is not here).
+
+### LLM pod configuration
+
+The LLM deployment ([k8s/llm-deployment.yaml.template](k8s/llm-deployment.yaml.template)) brings together all three:
+
+```yaml
+spec:
+  nodeSelector:
+    role: gpu-nodes          # only schedule on the GPU node group
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"   # tolerate the GPU taint
+  containers:
+    - resources:
+        requests:
+          nvidia.com/gpu: "1"  # request one GPU
+        limits:
+          nvidia.com/gpu: "1"
+```
+
+The `nodeSelector` ensures the pod lands on a GPU node. The toleration overrides the taint that would otherwise block it. The resource request tells the scheduler that this pod needs one GPU, and the limit ensures it gets exclusive access.
+
+No other deployment in this repo has the toleration, so only the LLM pod ever runs on the GPU node.
+
+### Deployment strategy
+
+The LLM deployment uses `strategy: Recreate` rather than the default `RollingUpdate`. With `RollingUpdate`, Kubernetes tries to spin up the new pod before terminating the old one — but since there is only one GPU and each pod requests all of it, the new pod can never be scheduled until the old one is gone. `Recreate` terminates the old pod first, freeing the GPU, then starts the new one.
 
 ---
 
@@ -373,7 +475,7 @@ kubectl describe pod -l app=llm-service -n chatbot | grep -A5 Warning
 kubectl logs -l app=llm-service -n chatbot --previous
 # "cannot import cartesia_pytorch" → image was built for wrong arch.
 #   Rebuild with --platform linux/amd64: make build && make push
-# HuggingFace 403/401 → token lacks access to cartesia-ai/Llamba-8B or meta-llama/Llama-3.2-1B
+# HuggingFace 403/401 → token lacks access to cartesia-ai/Llamba-3B or meta-llama/Llama-3.2-1B
 #   Request access on HuggingFace, then re-run: make setup-k8s
 ```
 
