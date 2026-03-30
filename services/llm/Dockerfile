@@ -5,6 +5,12 @@
 # On Apple Silicon use: docker build --platform linux/amd64 ...
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
+# Flush Python output immediately so logs appear before a crash
+ENV PYTHONUNBUFFERED=1
+# Compile CUDA extensions for A10G (sm_86 / Ampere).
+# Without this, builds without a GPU may default to a generic arch or PTX that
+# JIT-recompiles at runtime — which can segfault on the actual hardware.
+ENV TORCH_CUDA_ARCH_LIST="8.6"
 
 RUN apt-get update && apt-get install -y \
     python3.11 python3.11-dev \

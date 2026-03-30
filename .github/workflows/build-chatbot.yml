@@ -9,11 +9,6 @@ name: Build & Push chatbot image
 #   CLUSTER_NAME  (default: k8s-ssm)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/chatbot/**"
-      - ".github/workflows/build-chatbot.yml"
   workflow_dispatch:
     inputs:
       deploy:
@@ -70,7 +65,7 @@ jobs:
           docker push ${{ steps.ecr.outputs.base }}/chatbot:latest
 
       - name: Rollout restart chatbot deployment
-        if: ${{ github.event_name == 'push' || github.event.inputs.deploy == 'true' }}
+        if: ${{ github.event.inputs.deploy == 'true' }}
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \

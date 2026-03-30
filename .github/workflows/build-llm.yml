@@ -13,11 +13,6 @@ name: Build & Push LLM image
 #   CLUSTER_NAME  (default: k8s-ssm)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "services/llm/**"
-      - ".github/workflows/build-llm.yml"
   workflow_dispatch:
     inputs:
       deploy:
@@ -75,7 +70,7 @@ jobs:
           docker push ${{ steps.ecr.outputs.base }}/llm:latest
 
       - name: Rollout restart LLM deployment
-        if: ${{ github.event_name == 'push' || github.event.inputs.deploy == 'true' }}
+        if: ${{ github.event.inputs.deploy == 'true' }}
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
