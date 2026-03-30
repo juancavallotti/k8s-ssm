@@ -70,13 +70,15 @@ ENV ENV=${ENV}
 RUN python3 -c "\
 import os; \
 from transformers import AutoTokenizer; \
-from huggingface_hub import snapshot_download; \
+from huggingface_hub import snapshot_download, login; \
+token = os.getenv('HF_TOKEN'); \
+login(token=token); \
 is_dev = os.getenv('ENV') == 'dev'; \
 model_name = 'cartesia-ai/Llamba-1B' if is_dev else 'cartesia-ai/Llamba-8B'; \
-tok_name   = 'meta-llama/Llama-3.2-1B' if is_dev else 'meta-llama/Llama-3.1-8B'; \
+tok_name   = 'meta-llama/Llama-3.2-1B'; \
 print(f'[build] pre-downloading {model_name} + tokenizer {tok_name}'); \
-AutoTokenizer.from_pretrained(tok_name); \
-snapshot_download(repo_id=model_name); \
+AutoTokenizer.from_pretrained(tok_name, token=token); \
+snapshot_download(repo_id=model_name, token=token); \
 print('[build] done.') \
 "
 

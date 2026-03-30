@@ -63,11 +63,11 @@ module "eks" {
       })
     }
     gpu-nodes = {
-      instance_types = ["g4dn.xlarge"]
+      instance_types = ["g5.xlarge"]
       min_size     = 0
       max_size     = 2
       desired_size = 1
-      disk_size = 100
+      disk_size = 150
       ami_type  = "AL2_x86_64_GPU"
       labels = { role = "gpu-nodes" }
       taints = [{ key = "nvidia.com/gpu", value = "true", effect = "NO_SCHEDULE" }]

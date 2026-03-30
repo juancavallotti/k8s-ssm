@@ -24,7 +24,7 @@ if ENV == "dev":
     TOKENIZER_NAME = "meta-llama/Llama-3.2-1B"
 else:
     MODEL_NAME = "cartesia-ai/Llamba-8B-4bit-mlx" if BACKEND == "mlx" else "cartesia-ai/Llamba-8B"
-    TOKENIZER_NAME = "meta-llama/Llama-3.1-8B"
+    TOKENIZER_NAME = "meta-llama/Llama-3.2-1B"
 
 model = None
 tokenizer = None  # Not used by the MLX backend (generate() takes a string directly)
