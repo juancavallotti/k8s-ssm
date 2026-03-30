@@ -4,12 +4,12 @@ metadata:
   name: chatbot-ingress
   namespace: chatbot
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=120
     alb.ingress.kubernetes.io/healthcheck-path: /health
 spec:
+  ingressClassName: alb
   rules:
     - http:
         paths:

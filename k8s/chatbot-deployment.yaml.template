@@ -19,7 +19,7 @@ spec:
         role: app-nodes
       containers:
         - name: chatbot
-          image: <YOUR_ECR_REPO>/chatbot:latest
+          image: {{ECR_BASE}}/chatbot:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

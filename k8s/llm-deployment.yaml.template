@@ -23,7 +23,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: llm-service
-          image: <YOUR_ECR_REPO>/llm:latest
+          image: {{ECR_BASE}}/llm:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
@@ -42,11 +42,11 @@ spec:
               mountPath: /model-cache
           resources:
             requests:
-              memory: "16Gi"
+              memory: "12Gi"
               cpu: "2"
               nvidia.com/gpu: "1"
             limits:
-              memory: "24Gi"
+              memory: "14Gi"
               cpu: "4"
               nvidia.com/gpu: "1"
           livenessProbe:
