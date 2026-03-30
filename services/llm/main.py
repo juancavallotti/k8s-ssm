@@ -11,8 +11,9 @@ ENV = os.getenv("ENV", "")
 
 # Redirect HuggingFace cache to the persistent volume mount.
 # Falls back to the default ~/.cache/huggingface when running locally.
-HF_CACHE_DIR = os.getenv("HF_CACHE_DIR", "/model-cache")
-os.environ["HF_HOME"] = HF_CACHE_DIR
+HF_CACHE_DIR = os.getenv("HF_CACHE_DIR", "")
+if HF_CACHE_DIR and os.access(os.path.dirname(HF_CACHE_DIR) or "/", os.W_OK):
+    os.environ["HF_HOME"] = HF_CACHE_DIR
 
 # Detect backend at import time.
 # MLX is available when running natively on Apple Silicon macOS.
@@ -24,12 +25,15 @@ try:
 except ImportError:
     BACKEND = "pytorch"
 
-if ENV == "dev":
-    MODEL_NAME = "cartesia-ai/Llamba-1B-4bit-mlx" if BACKEND == "mlx" else "cartesia-ai/Llamba-1B"
-    TOKENIZER_NAME = "meta-llama/Llama-3.2-1B"
-else:
-    MODEL_NAME = "cartesia-ai/Llamba-8B-4bit-mlx" if BACKEND == "mlx" else "cartesia-ai/Llamba-8B"
-    TOKENIZER_NAME = "meta-llama/Llama-3.2-1B"
+_default_model = (
+    ("cartesia-ai/Llamba-1B-4bit-mlx" if BACKEND == "mlx" else "cartesia-ai/Llamba-1B")
+    if ENV == "dev"
+    # Llamba-8B requires ~22GB VRAM, exceeding the A10G's 22.3GB usable capacity.
+    # Llamba-3B fits comfortably (~6GB bfloat16) leaving headroom for activations.
+    else ("cartesia-ai/Llamba-3B-4bit-mlx" if BACKEND == "mlx" else "cartesia-ai/Llamba-3B")
+)
+MODEL_NAME     = os.getenv("MODEL_NAME", _default_model)
+TOKENIZER_NAME = os.getenv("TOKENIZER_NAME", "meta-llama/Llama-3.2-1B")
 
 model = None
 tokenizer = None  # Not used by the MLX backend (generate() takes a string directly)
@@ -57,16 +61,53 @@ async def lifespan(app: FastAPI):
         except Exception:
             device = "cpu"
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
-        print(f"[startup] ENV={ENV!r} BACKEND=pytorch — loading {MODEL_NAME} on {device} dtype={dtype}")
+        print(f"[startup] ENV={ENV!r} BACKEND=pytorch device={device} dtype={dtype}")
+
+        if device == "cuda":
+            props = torch.cuda.get_device_properties(0)
+            total_vram = props.total_memory / 1024**3
+            free_vram = (props.total_memory - torch.cuda.memory_allocated(0)) / 1024**3
+            print(f"[startup] GPU: {props.name} | VRAM total={total_vram:.1f}GB free={free_vram:.1f}GB")
+
+        import psutil
+        ram = psutil.virtual_memory()
+        print(f"[startup] RAM total={ram.total/1024**3:.1f}GB available={ram.available/1024**3:.1f}GB")
+
+        print(f"[startup] Loading tokenizer: {TOKENIZER_NAME}")
         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+        print(f"[startup] Tokenizer loaded. Loading model: {MODEL_NAME} (map_location={device!r}, dtype={dtype})")
+
         model = LlambaLMHeadModel.from_pretrained(
             MODEL_NAME,
-            device_map=device,
-            torch_dtype=dtype,
+            map_location=device,
+            device=device,
+            dtype=dtype,
         )
         model.eval()
 
-    print("[startup] Model loaded.")
+        if device == "cuda":
+            used_vram = torch.cuda.memory_allocated(0) / 1024**3
+            print(f"[startup] Model loaded. VRAM used={used_vram:.1f}GB")
+        ram = psutil.virtual_memory()
+        print(f"[startup] RAM after load: available={ram.available/1024**3:.1f}GB")
+
+        # Warm-up: run a short inference without CUDA graphs to initialize kernels.
+        print("[startup] Running warm-up inference...")
+        _warmup_input = tokenizer("Hello", return_tensors="pt").input_ids.to(device)
+        with torch.inference_mode():
+            model.generate(
+                input_ids=_warmup_input,
+                max_length=_warmup_input.shape[1] + 5,
+                cg=False,
+                return_dict_in_generate=True,
+                output_scores=False,
+                enable_timing=False,
+                temperature=1.0,
+                top_p=1.0,
+            )
+        print("[startup] Warm-up complete.")
+
+    print("[startup] Model loaded and ready.")
     yield
     del model
     if tokenizer is not None:
@@ -123,7 +164,7 @@ def _run_inference(messages: list[Message], system: str, max_tokens: int) -> str
 
     generate_fn = partial(
         model.generate,
-        cg=True,
+        cg=False,
         return_dict_in_generate=True,
         output_scores=False,
         enable_timing=False,
@@ -137,6 +178,11 @@ def _run_inference(messages: list[Message], system: str, max_tokens: int) -> str
 
     generated_ids = output.sequences[0][input_ids.shape[1]:]
     return tokenizer.decode(generated_ids.tolist(), skip_special_tokens=True).strip()
+
+
+@app.get("/health")
+async def health_alias():
+    return {"status": "ok" if model is not None else "loading"}
 
 
 @app.get("/api/health")

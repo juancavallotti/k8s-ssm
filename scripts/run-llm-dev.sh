@@ -87,6 +87,9 @@ else
 fi
 
 # ── Launch ───────────────────────────────────────────────────────────────────
+# Unset HF_CACHE_DIR so the model downloads to the default ~/.cache/huggingface
+# rather than /model-cache which is a K8s volume mount and doesn't exist locally.
+unset HF_CACHE_DIR
 echo ""
 echo "→ Starting LLM service on http://localhost:$PORT (ENV=$ENV, arch=$ARCH)"
 echo ""

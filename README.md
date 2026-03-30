@@ -88,7 +88,7 @@ Three gated repositories must be accessible with your token at **runtime** (mode
 
 | Repository | Purpose |
 |---|---|
-| [`cartesia-ai/Llamba-8B`](https://huggingface.co/cartesia-ai/Llamba-8B) | Production model weights |
+| [`cartesia-ai/Llamba-3B`](https://huggingface.co/cartesia-ai/Llamba-3B) | Production model weights (~6GB VRAM in bfloat16) |
 | [`cartesia-ai/Llamba-1B`](https://huggingface.co/cartesia-ai/Llamba-1B) | Dev / smoke-test model weights |
 | [`meta-llama/Llama-3.2-1B`](https://huggingface.co/meta-llama/Llama-3.2-1B) | Tokenizer (shared by both models) |
 
@@ -269,9 +269,12 @@ make teardown    # Destroy everything
 
 | Variable | Service | Default | Description |
 |---|---|---|---|
-| `HF_TOKEN` | llm (build-time only) | — | HuggingFace API token. Required at `docker build` time; not needed at runtime. |
-| `ENV` | llm | `""` | Set to `dev` to load `Llamba-1B` instead of `Llamba-8B` for CPU-friendly smoke-testing. |
-| `LLM_SERVICE_URL` | chatbot | `http://localhost:8001` | Base URL of the LLM service. In K8s this is set via ConfigMap to `http://llm-service:8000`. |
+| `HF_TOKEN` | llm | — | HuggingFace API token. Injected at runtime via Kubernetes secret. |
+| `ENV` | llm | `""` | Set to `dev` to load `Llamba-1B` for CPU-friendly smoke-testing. |
+| `MODEL_NAME` | llm | `cartesia-ai/Llamba-3B` (prod) / `cartesia-ai/Llamba-1B` (dev) | Override the model loaded at startup. |
+| `TOKENIZER_NAME` | llm | `meta-llama/Llama-3.2-1B` | Override the tokenizer. |
+| `HF_CACHE_DIR` | llm | `/model-cache` | Path where model weights are cached. Mapped to the PVC in K8s. |
+| `LLM_SERVICE_URL` | chatbot | `http://localhost:8001` | Base URL of the LLM service. In K8s set via ConfigMap to `http://llm-service:8000`. |
 
 ---
 

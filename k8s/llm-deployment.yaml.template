@@ -34,6 +34,13 @@ spec:
               value: "prod"
             - name: HF_CACHE_DIR
               value: "/model-cache"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            # Override model/tokenizer if needed (defaults to Llamba-3B / Llama-3.2-1B)
+            # - name: MODEL_NAME
+            #   value: "cartesia-ai/Llamba-8B"
+            # - name: TOKENIZER_NAME
+            #   value: "meta-llama/Llama-3.2-1B"
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:

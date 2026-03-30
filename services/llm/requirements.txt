@@ -1,4 +1,5 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+psutil
 # torch and cartesia-pytorch are installed explicitly in the Dockerfile
 # so the correct index URL and build flags can be applied per platform.
